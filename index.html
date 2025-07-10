@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Memory Flip Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f4f8;
+      overflow-x: hidden;
+
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+    #menu {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 250px;
+      height: 100vh;
+      background-color: #ffffff;
+      border-right: 1px solid #ccc;
+      padding: 20px;
+      box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+      overflow-y: auto;
+      transition: transform 0.3s ease;
+      z-index: 10;
+    }
+    #menu.hidden {
+      transform: translateX(-100%);
+    }
+    #menu h2 {
+      margin-top: 0;
+    }
+    #game {
+      padding: 20px;
+      max-width: 600px;
+      width: 100%;
+      margin-left: 0;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      box-sizing: border-box;
+      justify-content: space-between;
+    }
+    .card {
+      width: 100%;
+      max-width: 100px;
+      aspect-ratio: 1 / 1; /* Keep cards square */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #ddd;
+      border: 2px solid #999;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 18px;
+      user-select: none;
+      box-sizing: border-box;
+    }
+    .card.flipped {
+      background-color: #fff2b2;
+    }
+    .card.matched {
+      background-color: #b2f2bb;
+      border-color: #28a745;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 10px;
+      max-width: 100%;
+      margin: auto;
+    }
+
+    .status {
+      text-align: center;
+      margin-top: 20px;
+    }
+    #resetGameBtn {
+      align-self: center;
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      transition: background-color 0.3s ease;
+    }
+    #resetGameBtn:hover {
+      background-color: #a71d2a;
+    }
+    #startGameBtn {
+    	align-self: center;
+        margin-top: 20px;
+      	padding: 10px 20px;
+     	font-size: 16px;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        background-color: #00B4D8;
+        cursor: pointer;
+	}
+    #startGameBtn:hover {
+      background-color: #1E90FF;
+    }
+    .word-section {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+
+    .word-section-header {
+      background-color: #f8f8f8;
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      font-weight: bold;
+    }
+
+    .toggle-arrow {
+      margin-right: 8px;
+      font-size: 14px;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="menu">
+    <h2>Memory Flip Game</h2>
+    <label>Difficulty:<br>
+      <select id="difficulty">
+        <option value="easy">Easy (10 cards)</option>
+        <option value="medium">Medium (20 cards)</option>
+        <option value="hard">Difficult (30 cards)</option>
+      </select>
+    </label>
+    <hr>
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+      <h3 style="margin: 0;">Word Lists</h3>
+      <button id="toggleExpandBtn" type="button" style="padding: 4px 10px; font-size: 14px;" hidden>Expand All</button>
+    </div>
+
+    <div id="wordListSelection"></div>
+    <p id="warningMessage" style="color: red; display: none; margin-top: 10px;">
+      Please select at least one program before starting the game.
+    </p>
+    <button id="startGameBtn" onclick="startGame()">Start Game</button>
+  </div>
+
+  <div id="game">
+    <div class="grid" id="grid"></div>
+    <div class="status">
+      <p id="timer">Time: 0s</p>
+      <p id="pairsLeft">Pairs Remaining: 0</p>
+    </div>
+    <button id="resetGameBtn" onclick="resetGame()">Reset Game</button>
+  </div>
+
+  <script>
+    const wordLists = {
+      "Year 1": {
+        "Program 1": [["apple", "りんご"], ["dog", "いぬ"], ["cat", "ねこ"]],
+        "Program 2": [["sun", "たいよう"], ["moon", "つき"], ["star", "ほし"]],
+      },
+      "Year 2": {
+        "Program 1": [["run", "はしる"], ["jump", "とぶ"], ["swim", "およぐ"]],
+        "Program 2": [["test1", "test1"]],
+      },
+      "Year 3": {
+        "Program 1": [["help", "たすける"], ["make", "つくる"], ["let", "させる"]]
+      }
+    };
+
+    let selectedCards = [];
+    let matchedPairs = 0;
+    let totalPairs = 0;
+    let gameStarted = false;
+    let preventClick = false;
+    let timerInterval;
+    let seconds = 0;
+
+    const grid = document.getElementById("grid");
+    const timerDisplay = document.getElementById("timer");
+    const pairsLeftDisplay = document.getElementById("pairsLeft");
+    const menu = document.getElementById("menu");
+
+    function buildWordListSelector() {
+      const container = document.getElementById("wordListSelection");
+      container.innerHTML = "";
+
+      for (const year in wordLists) {
+        const section = document.createElement("div");
+        section.className = "word-section";
+        section.style.marginBottom = "10px";
+
+        // Create a horizontal wrapper for year checkbox + header
+        const headerRow = document.createElement("div");
+        headerRow.style.display = "flex";
+        headerRow.style.alignItems = "center";
+
+        // Year checkbox (left side)
+        const yearCheckbox = document.createElement("input");
+        yearCheckbox.type = "checkbox";
+        yearCheckbox.className = "year-checkbox";
+        yearCheckbox.id = `year-checkbox-${year.replace(/\s+/g, '')}`;
+        yearCheckbox.style.marginRight = "8px";
+
+        // Header div contains arrow + year label (clickable for expand/collapse)
+        const header = document.createElement("div");
+        header.className = "word-section-header";
+        header.style.cursor = "pointer";
+        header.style.display = "flex";
+        header.style.alignItems = "center";
+        header.style.flexGrow = "1";
+        header.style.userSelect = "none";
+
+        const toggleIcon = document.createElement("span");
+        toggleIcon.className = "toggle-arrow";
+        toggleIcon.textContent = "▶"; // collapsed by default
+        toggleIcon.style.marginRight = "6px";
+
+        const yearLabel = document.createElement("span");
+        yearLabel.className = "year-label";
+        yearLabel.textContent = year;
+
+        header.appendChild(toggleIcon);
+        header.appendChild(yearLabel);
+
+        headerRow.appendChild(yearCheckbox);
+        headerRow.appendChild(header);
+
+        // Programs container (full width below headerRow)
+        const programList = document.createElement("div");
+        programList.className = "programs";
+        programList.style.display = "none";
+        programList.style.marginLeft = "26px"; // indent programs
+        programList.style.marginTop = "6px";
+
+        for (const program in wordLists[year]) {
+          const label = document.createElement("label");
+          label.style.display = "block";
+          label.style.cursor = "pointer";
+
+          const programCheckbox = document.createElement("input");
+          programCheckbox.type = "checkbox";
+          programCheckbox.value = `${year}::${program}`;
+          programCheckbox.className = "program-checkbox";
+          programCheckbox.style.marginRight = "6px";
+
+          // Sync year checkbox when programs toggled
+          programCheckbox.addEventListener("change", () => {
+            const allPrograms = programList.querySelectorAll("input[type=checkbox]");
+            const allChecked = [...allPrograms].every(cb => cb.checked);
+            yearCheckbox.checked = allChecked;
+          });
+
+          label.appendChild(programCheckbox);
+          label.append(`${program}`);
+          programList.appendChild(label);
+        }
+
+        // Select/deselect all programs when year checkbox toggled
+        yearCheckbox.addEventListener("change", () => {
+          const programCheckboxes = programList.querySelectorAll("input[type=checkbox]");
+          programCheckboxes.forEach(cb => (cb.checked = yearCheckbox.checked));
+        });
+
+        // Expand/collapse on header click
+        header.addEventListener("click", () => {
+          const expanded = programList.style.display !== "none";
+          programList.style.display = expanded ? "none" : "block";
+          toggleIcon.textContent = expanded ? "▶" : "▼";
+        });
+
+        // Append all parts to section
+        section.appendChild(headerRow);
+        section.appendChild(programList);
+
+        container.appendChild(section);
+      }
+    }
+
+
+    function startGame() {
+      const warningMessage = document.getElementById("warningMessage");
+      warningMessage.style.display = "none"; // Hide warning at start
+
+      const checkboxes = document.querySelectorAll("#wordListSelection input.program-checkbox:checked");
+
+      if (checkboxes.length === 0) {
+        warningMessage.style.display = "block";
+        return; // Do not proceed
+      }
+
+      grid.innerHTML = "";
+      selectedCards = [];
+      matchedPairs = 0;
+      seconds = 0;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        seconds++;
+        timerDisplay.textContent = `Time: ${seconds}s`;
+      }, 1000);
+
+      const difficulty = document.getElementById("difficulty").value;
+      let numCards = difficulty === "easy" ? 10 : difficulty === "medium" ? 20 : 30;
+
+      let selectedPairs = [];
+      checkboxes.forEach(cb => {
+        const [year, program] = cb.value.split("::");
+        selectedPairs = selectedPairs.concat(wordLists[year][program]);
+      });
+
+      selectedPairs = shuffle(selectedPairs).slice(0, numCards / 2);
+      totalPairs = selectedPairs.length;
+
+      const allCards = shuffle(selectedPairs.flatMap(pair => [
+        { text: pair[0], id: pair[0] + pair[1] },
+        { text: pair[1], id: pair[0] + pair[1] }
+      ]));
+
+      allCards.forEach(card => {
+        const div = document.createElement("div");
+        div.className = "card";
+        div.textContent = "";
+        div.dataset.id = card.id;
+        div.dataset.text = card.text;
+        div.onclick = () => flipCard(div, difficulty);
+        grid.appendChild(div);
+      });
+
+      pairsLeftDisplay.textContent = `Pairs Remaining: ${totalPairs}`;
+      gameStarted = true;
+
+      // Hide menu when game starts
+      menu.classList.add("hidden");
+    }
+
+    function flipCard(card, difficulty) {
+      if (!gameStarted || card.classList.contains("flipped") || preventClick) return;
+
+      card.textContent = card.dataset.text;
+      card.classList.add("flipped");
+      selectedCards.push(card);
+
+      if (selectedCards.length === 2) {
+        preventClick = true;
+        const [a, b] = selectedCards;
+        const delay = difficulty === "easy" ? 2000 : difficulty === "medium" ? 1500 : 1000;
+
+        if (a.dataset.id === b.dataset.id && a !== b) {
+            a.classList.add("matched");
+            b.classList.add("matched");
+            matchedPairs++;
+            pairsLeftDisplay.textContent = `Pairs Remaining: ${totalPairs - matchedPairs}`;
+            selectedCards = [];
+            preventClick = false;
+            if (matchedPairs === totalPairs) {
+              clearInterval(timerInterval);
+              menu.classList.remove("hidden");
+            };
+        } else {
+          setTimeout(() => {
+            a.textContent = "";
+            b.textContent = "";
+            a.classList.remove("flipped");
+            b.classList.remove("flipped");
+            selectedCards = [];
+            preventClick = false;
+          }, delay);
+        }
+      }
+    }
+
+    function resetGame() {
+      clearInterval(timerInterval);
+      seconds = 0;
+      timerDisplay.textContent = "Time: 0s";
+      pairsLeftDisplay.textContent = "Pairs Remaining: 0";
+      grid.innerHTML = "";
+      menu.classList.remove("hidden");
+      gameStarted = false;
+      selectedCards = [];
+      matchedPairs = 0;
+      totalPairs = 0;
+      preventClick = false;
+    }
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+    const toggleExpandBtn = document.getElementById("toggleExpandBtn");
+
+      toggleExpandBtn.addEventListener("click", () => {
+        const allProgramLists = document.querySelectorAll(".programs");
+        // Check if any are currently collapsed (display: none)
+        const anyCollapsed = [...allProgramLists].some(pl => pl.style.display === "none");
+
+        if (anyCollapsed) {
+          // Expand all
+          allProgramLists.forEach(pl => {
+            pl.style.display = "block";
+            // Also update toggle arrows to down
+            const header = pl.previousSibling.previousSibling || pl.previousElementSibling.previousElementSibling;
+            if (header) {
+              const toggleArrow = header.querySelector(".toggle-arrow");
+              if (toggleArrow) toggleArrow.textContent = "▼";
+            }
+          });
+          toggleExpandBtn.textContent = "Collapse All";
+        } else {
+          // Collapse all
+          allProgramLists.forEach(pl => {
+            pl.style.display = "none";
+            // Update arrows to right
+            const header = pl.previousSibling.previousSibling || pl.previousElementSibling.previousElementSibling;
+            if (header) {
+              const toggleArrow = header.querySelector(".toggle-arrow");
+              if (toggleArrow) toggleArrow.textContent = "▶";
+            }
+          });
+          toggleExpandBtn.textContent = "Expand All";
+        }
+      });
+
+
+    buildWordListSelector();
+  </script>
+</body>
+</html>
